@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>k-NN Visualizer with Neighbor Lines</title>
+<style>
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #000; /* changed to black */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0;
+    padding: 20px;
+    color: #fff;
+  }
+  h1 {
+    margin-top: 20px;
+    color: #fff;
+  }
+  #controls {
+    margin-top: 15px;
+  }
+  label {
+    margin-right: 10px;
+  }
+  select {
+    margin-right: 20px;
+    padding: 4px;
+  }
+  #canvas-wrapper {
+    margin-top: 25px;
+    padding: 15px;
+    background: #111; /* darker canvas wrapper */
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(255,255,255,0.2);
+  }
+  canvas {
+    border-radius: 8px;
+    background-color: #111; /* canvas background black */
+    display: block;
+    margin: 0 auto;
+  }
+  .link-container {
+    margin-top: 20px;
+  }
+</style>
+</head>
+<body>
+<h1>k-Nearest Neighbors </h1>
+
+<div id="controls">
+  <label for="pointCount">Points:</label>
+  <select id="pointCount"></select>
+
+  <label for="kNeighbors">k:</label>
+  <select id="kNeighbors"></select>
+</div>
+
+<div id="canvas-wrapper">
+  <canvas id="knnCanvas" width="450" height="350"></canvas>
+</div>
+
+<div class="link-container">
+  <a href="index.html" target="_blank" style="color:#4dabf7;">Open in New Tab</a>
+</div>
+
+<script>
+const categories = [
+  { name: 'A', color: '#ff6b6b' },
+  { name: 'B', color: '#4dabf7' },
+  { name: 'C', color: '#2ecc71' }
+];
+
+function createRandomPoints(count) {
+  const data = [];
+  const centerX = 225;
+  const centerY = 175;
+  for (let i = 0; i < count; i++) {
+    const angle = (2 * Math.PI * i) / count;
+    const radius = 90 + Math.random() * 50;
+    const x = centerX + Math.cos(angle) * radius + (Math.random() * 30 - 15);
+    const y = centerY + Math.sin(angle) * radius + (Math.random() * 30 - 15);
+    const classIndex = Math.floor(Math.random() * categories.length);
+    data.push({ x, y, classIndex, isPredicted: false });
+  }
+  return data;
+}
+
+const pointSelect = document.getElementById('pointCount');
+for (let i = 20; i <= 200; i += 20) { // more points
+  const option = document.createElement('option');
+  option.value = i;
+  option.textContent = i;
+  pointSelect.appendChild(option);
+}
+
+const kSelect = document.getElementById('kNeighbors');
+for (let i = 1; i <= 9; i += 2) {
+  const option = document.createElement('option');
+  option.value = i;
+  option.textContent = i;
+  kSelect.appendChild(option);
+}
+
+let points = createRandomPoints(100); // default more points
+let kValue = 3;
+
+const canvas = document.getElementById('knnCanvas');
+const ctx = canvas.getContext('2d');
+
+function renderPoints(highlightedPoint = null, neighbors = []) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw neighbor lines first
+  if (highlightedPoint && neighbors.length) {
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    neighbors.forEach(neighbor => {
+      ctx.beginPath();
+      ctx.moveTo(highlightedPoint.x, highlightedPoint.y);
+      ctx.lineTo(neighbor.x, neighbor.y);
+      ctx.stroke();
+    });
+  }
+
+  // Draw points
+  points.forEach(pt => {
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, pt.isPredicted ? 10 : 6, 0, Math.PI * 2); // smaller points
+    ctx.fillStyle = categories[pt.classIndex].color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = pt.isPredicted ? 2 : 1;
+    ctx.stroke();
+    ctx.closePath();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = pt.isPredicted ? 'bold 14px sans-serif' : 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(categories[pt.classIndex].name, pt.x, pt.y);
+  });
+}
+
+function classify(x, y, k) {
+  const distances = points
+    .filter(p => !p.isPredicted)
+    .map(p => ({ classIndex: p.classIndex, dist: Math.hypot(p.x - x, p.y - y) }))
+    .sort((a, b) => a.dist - b.dist);
+  const nearest = distances.slice(0, k);
+  const tally = {};
+  nearest.forEach(n => tally[n.classIndex] = (tally[n.classIndex] || 0) + 1);
+  let maxCount = -1;
+  let chosenClass = 0;
+  for (const idx in tally) {
+    if (tally[idx] > maxCount) {
+      maxCount = tally[idx];
+      chosenClass = parseInt(idx);
+    }
+  }
+  return chosenClass;
+}
+
+function getPointNear(x, y) {
+  return points.find(pt => Math.hypot(pt.x - x, pt.y - y) < 10); // smaller hit area
+}
+
+function findKNearestNeighbors(targetPoint, numNeighbors = 5) {
+  const distances = points
+    .filter(p => p !== targetPoint)
+    .map(p => ({ ...p, dist: Math.hypot(p.x - targetPoint.x, p.y - targetPoint.y) }))
+    .sort((a, b) => a.dist - b.dist);
+  return distances.slice(0, numNeighbors);
+}
+
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  const clickedPoint = getPointNear(x, y);
+  if (clickedPoint) {
+    const neighbors = findKNearestNeighbors(clickedPoint, 5);
+    renderPoints(clickedPoint, neighbors);
+    return;
+  }
+
+  const predictedClass = classify(x, y, kValue);
+  points.push({ x, y, classIndex: predictedClass, isPredicted: true });
+  renderPoints();
+});
+
+pointSelect.value = 100;
+pointSelect.addEventListener('change', function() {
+  points = createRandomPoints(Number(this.value));
+  renderPoints();
+});
+
+kSelect.value = 3;
+kSelect.addEventListener('change', function() {
+  kValue = Number(this.value);
+});
+
+renderPoints();
+</script>
+</body>
+</html>
